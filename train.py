@@ -107,7 +107,7 @@ class BasicTrainer(Trainer):
         wandb.log({
             "Slide Image" : wandb.Image(show_density),
             "Projection Image" : wandb.Image(show_proj)
-        })
+        }, step=idx_epoch)
         with open(osp.join(eval_save_dir, "stats.txt"), "w") as f: 
             for key, value in loss.items(): 
                 f.write("%s: %f\n" % (key, value.item()))
