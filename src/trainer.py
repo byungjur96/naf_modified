@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 from shutil import copyfile
 import numpy as np
+import yaml
 
 from .dataset import TIGREDataset as Dataset
 from .network import get_network
@@ -31,6 +32,8 @@ class Trainer:
         self.ckptdir_backup = osp.join(self.expdir, "ckpt_backup.tar")
         self.evaldir = osp.join(self.expdir, "eval")
         os.makedirs(self.evaldir, exist_ok=True)
+        with open(osp.join(self.expdir, 'config.yaml'), 'w') as yaml_file:
+            yaml.dump(self.conf, yaml_file, default_flow_style=False)
 
         # Dataset
         train_dset = Dataset(cfg["exp"]["datadir"], cfg["train"]["n_rays"], "train", device)

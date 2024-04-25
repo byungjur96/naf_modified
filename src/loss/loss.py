@@ -1,4 +1,5 @@
 import torch
+# from einops import rearrange
 
 
 def calc_mse_loss(loss, x, y):
@@ -29,4 +30,20 @@ def calc_tv_loss(loss, x, k):
     return loss
 
 
+# num_train_timesteps = 1000
+# t_range=[0.02, 0.98]
+# min_step = int(num_train_timesteps * t_range[0])
+# max_step = int(num_train_timesteps * t_range[1])
+# scheduler = None
+# def calc_sds_loss(loss, img):
+#     num_rays, _ = img.shape
+#     h = w = int(num_rays ** (1/2))
+#     img = rearrange(img, "(h w) c -> 1 c h w", h-h, w=w)
+#     t = torch.randint(min_step, max_step + 1, [1], dtype=torch.long)
+    
+#     with torch.no_grad():
+#         noise = torch.randn_like(img)
+#         img_noisy = scheduler.add_noise(img, noise, t)
+        
+        
 

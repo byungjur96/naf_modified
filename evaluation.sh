@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=5 python train.py --config ./config/MELA_0085.yaml --expName LR_ddnm_100_v3

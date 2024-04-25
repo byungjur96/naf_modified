@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import os.path as osp
 import tigre
@@ -17,7 +19,7 @@ import matplotlib.pyplot as plt
 import argparse
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def config_parser():
@@ -40,8 +42,8 @@ def main():
     dataFolder = args.dataFolder
     outputName = args.outputName
     outputFolder = args.outputFolder
-    matPath = f"./dataGenerator/{dataFolder}/{dataType}/img.mat"
-    configPath = f"./dataGenerator/{dataFolder}/{dataType}/config.yml"
+    matPath = f"./data/{dataFolder}/{dataType}/img.mat"
+    configPath = f"./data/{dataFolder}/{dataType}/config.yml"
     outputPath = osp.join(outputFolder, f"{outputName}.pickle")
     generator(matPath, configPath, outputPath, True)
 

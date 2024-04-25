@@ -11,17 +11,23 @@ from src.trainer import Trainer
 from src.loss import calc_mse_loss
 from src.utils import get_psnr, get_mse, get_psnr_3d, get_ssim_3d, cast_to_image
 
+import wandb
 
 def config_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="./config/abdomen_50.yaml",
                         help="configs file path")
+    parser.add_argument("--expName", default="training",
+                        help="Name of experiment name to be saved.")
     return parser
 
 parser = config_parser()
 args = parser.parse_args()
 
 cfg = load_config(args.config)
+cfg['exp']['expname'] = args.expName
+
+# wandb.init(project="CT Reconstruction")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -39,7 +45,9 @@ class BasicTrainer(Trainer):
         projs = data["projs"].reshape(-1)
         ret = render(rays, self.net, self.net_fine, **self.conf["render"])
         projs_pred = ret["acc"]
-
+        # print(f"rays: {rays.shape}")
+        # print(f"Proj: {projs.shape}")
+        # print(f"Ret: {projs_pred.shape}")
         loss = {"loss": 0.}
         calc_mse_loss(loss, projs, projs_pred)
 
@@ -60,11 +68,11 @@ class BasicTrainer(Trainer):
         H, W = projs.shape
         projs_pred = []
         for i in range(0, rays.shape[0], self.n_rays):
-            projs_pred.append(render(rays[i:i+self.n_rays], self.net, self.net_fine, **self.conf["render"])["acc"])
-        projs_pred = torch.cat(projs_pred, 0).reshape(H, W)
+            projs_pred.append(render(rays[i:i+self.n_rays], self.net, self.net_fine, **self.conf["render"])["acc"])  # 2048 * 128
+        projs_pred = torch.cat(projs_pred, 0).reshape(H, W)  # 512x512
 
         # Evaluate density
-        image = self.eval_dset.image
+        image = self.eval_dset.image # 512, 512, 512
         image_pred = run_network(self.eval_dset.voxels, self.net_fine if self.net_fine is not None else self.net, self.netchunk)
         image_pred = image_pred.squeeze()
         loss = {

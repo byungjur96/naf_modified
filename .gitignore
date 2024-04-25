@@ -1,4 +1,6 @@
 __pycache__
 *.pickle
 logs/
+data/
 *.zip
+*.ipynb

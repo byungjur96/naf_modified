@@ -22,10 +22,10 @@ def render(rays, net, net_fine, n_samples, n_fine, perturb, netchunk, raw_noise_
 
     pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [n_rays, n_samples, 3]
     bound = net.bound - 1e-6
-    pts = pts.clamp(-bound, bound)
+    pts = pts.clamp(-bound, bound)  # (2048, 768, 3)
 
-    raw = run_network(pts, net, netchunk)
-    acc, weights = raw2outputs(raw, z_vals, rays_d, raw_noise_std)
+    raw = run_network(pts, net, netchunk)  # (2048, 768, 1)
+    acc, weights = raw2outputs(raw, z_vals, rays_d, raw_noise_std)  # (2048), (2048, 768)
 
     if net_fine is not None and n_fine > 0:
         acc_0 = acc

@@ -63,7 +63,7 @@ class TIGREDataset(Dataset):
                                  -1)
             self.coords = torch.reshape(coords, [-1, 2])
             self.image = torch.tensor(data["image"], dtype=torch.float32, device=device)
-            self.voxels = torch.tensor(self.get_voxels(self.geo), dtype=torch.float32, device=device)
+            self.voxels = torch.tensor(self.get_voxels(self.geo), dtype=torch.float32, device=device)  # (128, 128, 128, 3)
         elif type == "val":
             self.projs = torch.tensor(data["val"]["projections"], dtype=torch.float32, device=device)
             angles = data["val"]["angles"]
@@ -71,22 +71,23 @@ class TIGREDataset(Dataset):
             self.rays = torch.cat([rays, torch.ones_like(rays[...,:1])*self.near, torch.ones_like(rays[...,:1])*self.far], dim=-1)
             self.n_samples = data["numVal"]
             self.image = torch.tensor(data["image"], dtype=torch.float32, device=device)
-            self.voxels = torch.tensor(self.get_voxels(self.geo), dtype=torch.float32, device=device)
+            self.voxels = torch.tensor(self.get_voxels(self.geo), dtype=torch.float32, device=device)  # (128, 128, 128, 3)
         
     def __len__(self):
         return self.n_samples
 
     def __getitem__(self, index):
         if self.type == "train":
-            projs_valid = (self.projs[index]>0).flatten()
-            coords_valid = self.coords[projs_valid]
-            select_inds = np.random.choice(coords_valid.shape[0], size=[self.n_rays], replace=False)
-            select_coords = coords_valid[select_inds].long()
+            projs_valid = (self.projs[index]>0).flatten()  # 512x512 개로 펼침
+            coords_valid = self.coords[projs_valid]  # 0,0 ~ 511,511
+            select_inds = np.random.choice(coords_valid.shape[0], size=[self.n_rays], replace=False)  # 512x512 중 랜덤하게 1024개 추출
+            select_coords = coords_valid[select_inds].long()  # index가 나타내는 x, y좌표
             rays = self.rays[index, select_coords[:, 0], select_coords[:, 1]]
             projs = self.projs[index, select_coords[:, 0], select_coords[:, 1]]
             out = {
                 "projs":projs,
                 "rays":rays,
+                "image":self.projs[index]
             }
         elif self.type == "val":
             rays = self.rays[index]
@@ -94,6 +95,7 @@ class TIGREDataset(Dataset):
             out = {
                 "projs":projs,
                 "rays":rays,
+                "image":self.projs[index]
             }
         return out
 
