@@ -4,14 +4,13 @@ import torch
 import imageio.v2 as iio
 import numpy as np
 import argparse
+import wandb
 
 from src.config.configloading import load_config
 from src.render import render, run_network
 from src.trainer import Trainer
 from src.loss import calc_mse_loss
 from src.utils import get_psnr, get_mse, get_psnr_3d, get_ssim_3d, cast_to_image
-
-import wandb
 
 def config_parser():
     parser = argparse.ArgumentParser()
@@ -27,7 +26,6 @@ args = parser.parse_args()
 cfg = load_config(args.config)
 cfg['exp']['expname'] = args.expName
 
-# wandb.init(project="CT Reconstruction")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -106,6 +104,10 @@ class BasicTrainer(Trainer):
         np.save(osp.join(eval_save_dir, "image_gt.npy"), image.cpu().detach().numpy())
         iio.imwrite(osp.join(eval_save_dir, "slice_show_row1_gt_row2_pred.png"), (cast_to_image(show_density)*255).astype(np.uint8))
         iio.imwrite(osp.join(eval_save_dir, "proj_show_left_gt_right_pred.png"), (cast_to_image(show_proj)*255).astype(np.uint8))
+        wandb.log({
+            "Slide Image" : wandb.Image(show_density),
+            "Projection Image" : wandb.Image(show_proj)
+        })
         with open(osp.join(eval_save_dir, "stats.txt"), "w") as f: 
             for key, value in loss.items(): 
                 f.write("%s: %f\n" % (key, value.item()))

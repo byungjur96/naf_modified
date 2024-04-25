@@ -12,6 +12,7 @@ from .dataset import TIGREDataset as Dataset
 from .network import get_network
 from .encoder import get_encoder
 
+import wandb
 
 class Trainer:
     def __init__(self, cfg, device="cuda"):
@@ -74,6 +75,9 @@ class Trainer:
         # Summary writer
         self.writer = SummaryWriter(self.expdir)
         self.writer.add_text("parameters", self.args2string(cfg), global_step=0)
+        
+        wandb.init(project="CT Reconstruction", config=self.conf)
+        wandb.run.name = cfg['exp']['expname']
 
     def args2string(self, hp):
         """
@@ -109,6 +113,10 @@ class Trainer:
                 # Train
                 self.net.train()
                 loss_train = self.train_step(data, global_step=self.global_step, idx_epoch=idx_epoch)
+                wandb.log({
+                    "loss" : loss_train,
+                    "Learning Rate" : self.optimizer.param_groups[0]['lr']
+                })
                 pbar.set_description(f"epoch={idx_epoch}/{self.epochs}, loss={loss_train:.3g}, lr={self.optimizer.param_groups[0]['lr']:.3g}")
                 pbar.update(1)
             
