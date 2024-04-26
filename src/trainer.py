@@ -116,7 +116,7 @@ class Trainer:
                 wandb.log({
                     "loss" : loss_train,
                     "Learning Rate" : self.optimizer.param_groups[0]['lr']
-                })
+                }, step=idx_epoch)
                 pbar.set_description(f"epoch={idx_epoch}/{self.epochs}, loss={loss_train:.3g}, lr={self.optimizer.param_groups[0]['lr']:.3g}")
                 pbar.update(1)
             
