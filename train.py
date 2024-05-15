@@ -104,9 +104,11 @@ class BasicTrainer(Trainer):
         np.save(osp.join(eval_save_dir, "image_gt.npy"), image.cpu().detach().numpy())
         iio.imwrite(osp.join(eval_save_dir, "slice_show_row1_gt_row2_pred.png"), (cast_to_image(show_density)*255).astype(np.uint8))
         iio.imwrite(osp.join(eval_save_dir, "proj_show_left_gt_right_pred.png"), (cast_to_image(show_proj)*255).astype(np.uint8))
+        self.loss_table.add_data(*([idx_epoch] + [loss[i].item() for i in loss.keys()]))
+        print(self.loss_table)
         wandb.log({
             "Slide Image" : wandb.Image(show_density),
-            "Projection Image" : wandb.Image(show_proj)
+            "Projection Image" : wandb.Image(show_proj),
         }, step=idx_epoch)
         with open(osp.join(eval_save_dir, "stats.txt"), "w") as f: 
             for key, value in loss.items(): 

@@ -147,11 +147,11 @@ class WireNetwork(nn.Module):
     
     def forward(self, coords):
         
-        x = self.encoder(x, self.bound)
+        x = self.encoder(coords, self.bound)
         
         input_pts = x[..., :self.in_dim]
         
-        output = self.net(coords)
+        output = self.net(input_pts)
         
         if self.wavelet == 'gabor':
             return output.real

@@ -78,6 +78,7 @@ class Trainer:
         
         wandb.init(project="CT Reconstruction", config=self.conf)
         wandb.run.name = cfg['exp']['expname']
+        self.loss_table = wandb.Table(columns=["epoch", "proj_mse", "proj_psnr", "psnr_3d", "ssim_3d"])
 
     def args2string(self, hp):
         """
@@ -140,6 +141,7 @@ class Trainer:
             self.lr_scheduler.step()
 
         tqdm.write(f"Training complete! See logs in {self.expdir}")
+        wandb.log({"Loss" : self.loss_table})
 
     def train_step(self, data, global_step, idx_epoch):
         """
