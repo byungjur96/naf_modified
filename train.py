@@ -18,6 +18,8 @@ def config_parser():
                         help="configs file path")
     parser.add_argument("--expName", default="training",
                         help="Name of experiment name to be saved.")
+    parser.add_argument("--use_wandb", action="store_true",
+                        help="Name of experiment name to be saved.")
     return parser
 
 parser = config_parser()
@@ -25,6 +27,7 @@ args = parser.parse_args()
 
 cfg = load_config(args.config)
 cfg['exp']['expname'] = args.expName
+cfg['use_wandb'] = args.use_wandb
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,12 +107,13 @@ class BasicTrainer(Trainer):
         np.save(osp.join(eval_save_dir, "image_gt.npy"), image.cpu().detach().numpy())
         iio.imwrite(osp.join(eval_save_dir, "slice_show_row1_gt_row2_pred.png"), (cast_to_image(show_density)*255).astype(np.uint8))
         iio.imwrite(osp.join(eval_save_dir, "proj_show_left_gt_right_pred.png"), (cast_to_image(show_proj)*255).astype(np.uint8))
-        self.loss_table.add_data(*([idx_epoch] + [loss[i].item() for i in loss.keys()]))
-        print(self.loss_table)
-        wandb.log({
-            "Slide Image" : wandb.Image(show_density),
-            "Projection Image" : wandb.Image(show_proj),
-        }, step=idx_epoch)
+        
+        if self.use_wandb:
+            self.loss_table.add_data(*([idx_epoch] + [loss[i].item() for i in loss.keys()]))
+            wandb.log({
+                "Slide Image" : wandb.Image(show_density),
+                "Projection Image" : wandb.Image(show_proj),
+            }, step=idx_epoch)
         with open(osp.join(eval_save_dir, "stats.txt"), "w") as f: 
             for key, value in loss.items(): 
                 f.write("%s: %f\n" % (key, value.item()))

@@ -75,10 +75,12 @@ class Trainer:
         # Summary writer
         self.writer = SummaryWriter(self.expdir)
         self.writer.add_text("parameters", self.args2string(cfg), global_step=0)
+        self.use_wandb = cfg['use_wandb']
         
-        wandb.init(project="CT Reconstruction", config=self.conf)
-        wandb.run.name = cfg['exp']['expname']
-        self.loss_table = wandb.Table(columns=["epoch", "proj_mse", "proj_psnr", "psnr_3d", "ssim_3d"])
+        if self.use_wandb:
+            wandb.init(project="CT Reconstruction", config=self.conf)
+            wandb.run.name = cfg['exp']['expname']
+            self.loss_table = wandb.Table(columns=["epoch", "proj_mse", "proj_psnr", "psnr_3d", "ssim_3d"])
 
     def args2string(self, hp):
         """
@@ -114,10 +116,11 @@ class Trainer:
                 # Train
                 self.net.train()
                 loss_train = self.train_step(data, global_step=self.global_step, idx_epoch=idx_epoch)
-                wandb.log({
-                    "loss" : loss_train,
-                    "Learning Rate" : self.optimizer.param_groups[0]['lr']
-                }, step=idx_epoch)
+                if self.use_wandb:
+                    wandb.log({
+                        "loss" : loss_train,
+                        "Learning Rate" : self.optimizer.param_groups[0]['lr']
+                    }, step=idx_epoch)
                 pbar.set_description(f"epoch={idx_epoch}/{self.epochs}, loss={loss_train:.3g}, lr={self.optimizer.param_groups[0]['lr']:.3g}")
                 pbar.update(1)
             
@@ -141,7 +144,8 @@ class Trainer:
             self.lr_scheduler.step()
 
         tqdm.write(f"Training complete! See logs in {self.expdir}")
-        wandb.log({"Loss" : self.loss_table})
+        if self.use_wandb:
+            wandb.log({"Loss" : self.loss_table})
 
     def train_step(self, data, global_step, idx_epoch):
         """
