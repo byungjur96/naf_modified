@@ -3,9 +3,9 @@ import pickle
 import os
 import sys
 import numpy as np
+from scipy.ndimage import zoom
 
 from torch.utils.data import DataLoader, Dataset
-
 
 class ConeGeometry(object):
     """
@@ -41,7 +41,7 @@ class TIGREDataset(Dataset):
     """
     TIGRE dataset.
     """
-    def __init__(self, path, n_rays=1024, type="train", device="cuda"):    
+    def __init__(self, path, n_rays=1024, type="train", device="cuda", patch_size=0):    
         super().__init__()
 
         with open(path, "rb") as handle:
@@ -51,6 +51,8 @@ class TIGREDataset(Dataset):
         self.type = type
         self.n_rays = n_rays
         self.near, self.far = self.get_near_far(self.geo)
+        self.use_patch = patch_size is not None and patch_size > 0
+        self.patch_size = patch_size
     
         if type == "train":
             self.projs = torch.tensor(data["train"]["projections"], dtype=torch.float32, device=device)
@@ -64,6 +66,7 @@ class TIGREDataset(Dataset):
             self.coords = torch.reshape(coords, [-1, 2])
             self.image = torch.tensor(data["image"], dtype=torch.float32, device=device)
             self.voxels = torch.tensor(self.get_voxels(self.geo), dtype=torch.float32, device=device)  # (128, 128, 128, 3)
+            
         elif type == "val":
             self.projs = torch.tensor(data["val"]["projections"], dtype=torch.float32, device=device)
             angles = data["val"]["angles"]
@@ -77,18 +80,73 @@ class TIGREDataset(Dataset):
         return self.n_samples
 
     def __getitem__(self, index):
+        
         if self.type == "train":
-            projs_valid = (self.projs[index]>0).flatten()  # 512x512 개로 펼침
-            coords_valid = self.coords[projs_valid]  # 0,0 ~ 511,511
-            select_inds = np.random.choice(coords_valid.shape[0], size=[self.n_rays], replace=False)  # 512x512 중 랜덤하게 1024개 추출
-            select_coords = coords_valid[select_inds].long()  # index가 나타내는 x, y좌표
-            rays = self.rays[index, select_coords[:, 0], select_coords[:, 1]]
-            projs = self.projs[index, select_coords[:, 0], select_coords[:, 1]]
-            out = {
-                "projs":projs,
-                "rays":rays,
-                "image":self.projs[index]
-            }
+            # Create valid coordinates (0,0 ~ 511,511)
+            coords = torch.stack(torch.meshgrid(torch.arange(0, self.geo.nDetector[1], device=self.projs.device),
+                                                torch.arange(0, self.geo.nDetector[0], device=self.projs.device), indexing="ij"), -1)
+            coords = torch.reshape(coords, [-1, 2])  # Flatten to [262144, 2]
+
+            # Randomly select a 32x32 patch
+            if self.use_patch:
+                # print("Patch-wise Sampling")
+                max_x = self.geo.nDetector[0] - self.patch_size  # Maximum x value where a full 32x32 patch fits
+                max_y = self.geo.nDetector[1] - self.patch_size  # Maximum y value where a full 32x32 patch fits
+                start_x = np.random.randint(0, max_x + 1)
+                start_y = np.random.randint(0, max_y + 1)
+
+                # Define the patch coordinates (32x32)
+                patch_coords_x = torch.arange(start_x, start_x + self.patch_size, device=self.projs.device)
+                patch_coords_y = torch.arange(start_y, start_y + self.patch_size, device=self.projs.device)
+                patch_coords = torch.stack(torch.meshgrid(patch_coords_x, patch_coords_y, indexing="ij"), -1)
+                patch_coords = torch.reshape(patch_coords, [-1, 2])  # Flatten to [1024, 2]
+
+                # Create a mask to filter out patch coordinates from full coordinates
+                patch_mask = torch.ones(coords.shape[0], dtype=torch.bool, device=self.projs.device)
+
+                # Get indices corresponding to patch coordinates
+                flat_patch_indices = patch_coords[:, 0] * self.geo.nDetector[1] + patch_coords[:, 1]
+                patch_mask[flat_patch_indices] = False  # Mask out the patch coordinates
+
+                # Get coordinates outside the patch
+                coords_outside_patch = coords[patch_mask]
+
+                # Calculate the number of additional pixels needed outside the patch
+                n_outside_rays = self.n_rays - self.patch_size * self.patch_size  # Number of pixels to sample from outside the patch
+
+                # Randomly select additional pixels from the coordinates outside of the selected patch
+                select_inds = torch.randperm(coords_outside_patch.shape[0])[:n_outside_rays]
+                select_coords_outside_patch = coords_outside_patch[select_inds]  # Selected random coordinates outside the patch
+
+                # Concatenate the patch coordinates with the outside coordinates
+                all_coords = torch.cat([patch_coords, select_coords_outside_patch], dim=0)
+
+                # Gather rays and projections for the concatenated coordinates
+                rays = self.rays[index, all_coords[:, 0], all_coords[:, 1]]
+                projs = self.projs[index, all_coords[:, 0], all_coords[:, 1]]
+                
+                # Gather the projections for the patch separately
+                patch_projs = self.projs[index, patch_coords[:, 0], patch_coords[:, 1]].reshape(self.patch_size, self.patch_size)
+                
+                out = {
+                    "projs": projs,
+                    "rays": rays,
+                    "patch_projs": patch_projs, 
+                    "image": self.projs[index]
+                }
+            else:
+                # print("Totally random sampling")
+                projs_valid = (self.projs[index]>0).flatten()
+                coords_valid = self.coords[projs_valid]  # 0,0 ~ 511,511
+                select_inds = np.random.choice(coords_valid.shape[0], size=[self.n_rays], replace=False)  # 512x512 중 랜덤하게 1024개 추출
+                select_coords = coords_valid[select_inds].long()  # index가 나타내는 x, y좌표
+                rays = self.rays[index, select_coords[:, 0], select_coords[:, 1]]
+                projs = self.projs[index, select_coords[:, 0], select_coords[:, 1]]
+                out = {
+                    "projs":projs,
+                    "rays":rays,
+                    "image":self.projs[index]
+                }
         elif self.type == "val":
             rays = self.rays[index]
             projs = self.projs[index]
@@ -174,7 +232,7 @@ class TIGREDataset(Dataset):
         T[:-1, -1] = trans
         return T
 
-    def get_near_far(self, geo: ConeGeometry, tolerance=0.005):
+    def get_near_far(self, geo: ConeGeometry, tolerance=0.001):
         """
         Compute the near and far threshold.
         """

@@ -1,1 +1,1 @@
-from .tigre import TIGREDataset
+from .tigre import TIGREDataset, ConeGeometry

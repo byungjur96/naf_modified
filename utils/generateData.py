@@ -10,7 +10,6 @@ import yaml
 
 import pickle
 import scipy.io
-import SimpleITK as sitk
 import scipy.ndimage.interpolation
 from tigre.utilities import CTnoise
 
@@ -25,30 +24,28 @@ import argparse
 
 def config_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", default="test", type=str,
-                        help="Type of dataset")
-    parser.add_argument("--ctName", default="mela_0257", type=str,
+    parser.add_argument("--ctName", default="chest", type=str,
                         help="Name of CT")
-    parser.add_argument("--config", default="gt256", type=str,
-                        help="Name of config file")
     parser.add_argument("--outputName", default="chest_50", type=str,
                         help="Name of output data")
+    parser.add_argument("--dataFolder", default="raw", type=str,
+                        help="folder of raw data")
+    parser.add_argument("--outputFolder", default="./data", type=str,
+                        help="folder of output data")
     return parser
 
 
 def main():
     parser = config_parser()
     args = parser.parse_args()
-    
-    volName = args.ctName
-    mode = args.mode
+    dataType = args.ctName
+    dataFolder = args.dataFolder
     outputName = args.outputName
-    configName = args.config
-    
-    volPath = f"/workspace/CVPR25/data/CVPR/{mode}/{volName}.nii.gz"
-    configPath = f"./config/pickle/{configName}.yml"
-    outputPath = f"./data/{outputName}.pickle"
-    generator(volPath, configPath, outputPath, True)
+    outputFolder = args.outputFolder
+    matPath = f"./data/{dataFolder}/{dataType}/img.mat"
+    configPath = f"./data/{dataFolder}/{dataType}/config.yml"
+    outputPath = osp.join(outputFolder, f"{outputName}.pickle")
+    generator(matPath, configPath, outputPath, True)
 
 # %% Geometry
 class ConeGeometry_special(Geometry):
@@ -112,98 +109,69 @@ def convert_to_attenuation(data: np.array, rescale_slope: float, rescale_interce
     # mu = mu * 100
     return mu
 
-def get_volume_from_file(file):
-    vol = sitk.GetArrayFromImage(file)
-    vol = np.transpose(vol, (1, 2, 0))
-    vol = vol.astype(np.float32)  # TIGRE requires float32
-    return vol
 
-def loadImage(dirname, lrVol, nVoxels, convert, rescale_slope, rescale_intercept, normalize=True):
+def loadImage(dirname, nVoxels, convert, rescale_slope, rescale_intercept, normalize=True):
     """
     Load CT image.
     """
-    # Load Volume File
-    gt_file = sitk.ReadImage(dirname)
-    nVoxels = np.array(gt_file.GetSize()) if nVoxels is None else np.array(nVoxels)
-    
-    # Volume Information
-    stats = sitk.StatisticsImageFilter()
-    stats.Execute(gt_file)
-    image_min = stats.GetMinimum()
-    image_max = stats.GetMaximum()
-    image_mean = stats.GetMean()
-    gt_file = sitk.Clamp(gt_file, lowerBound=-512, upperBound=image_max)
-    # gt_file = sitk.Clamp(gt_file, lowerBound=-500, upperBound=2000)
-    
-    print("Range of CT image is [%f, %f], mean: %f" % (image_min, image_max, image_mean))
-    
-    # Normalization
-    if normalize and image_min !=0 and image_max != 1:
-        print("Normalize range to [0, 1]")
-        gt_file = normalize_volume(gt_file)
-    
-    # Generate array of GT volume
-    if not np.all(np.array(gt_file.GetSize()) == nVoxels):
-        print(f"Given volume is downsampled with scale {nVoxels/np.array(gt_file.GetSize())}")
-        gt_file = downsample_volume(gt_file, np.array(gt_file.GetSize())/nVoxels)
-    
-    gt_vol = get_volume_from_file(gt_file)
-    
-    # Generate LR Volume
-    lrVol = np.array((64, 64, 64)) if lrVol is None else np.array(lrVol)
-    if np.any(nVoxels != lrVol):
-        print(f"Resize GT ct image from {nVoxels[0]}x{nVoxels[1]}x{nVoxels[2]} to "
-              f"{lrVol[0]}x{lrVol[1]}x{lrVol[2]}")
-        lr_file = downsample_volume(gt_file, nVoxels/lrVol)
-        lr_vol = get_volume_from_file(lr_file)
-        print(lr_vol.shape)
-    else:
-        lr_vol = None
-    
-    # Convert HU into attenuation if needed
+
+    if nVoxels is None:
+        nVoxels = np.array((256, 256, 256))
+
+    test_data = scipy.io.loadmat(dirname)
+
+    # Loads data in F_CONTIGUOUS MODE (column major), convert to Row major
+    image_ori = test_data["img"].astype(np.float32)
     if convert:
         print("Convert from HU to attenuation")
-        gt_image = convert_to_attenuation(gt_vol, rescale_slope, rescale_intercept)
-        lr_image = None if lr_vol is None else convert_to_attenuation(lr_vol, rescale_slope, rescale_intercept)
+        image = convert_to_attenuation(image_ori, rescale_slope, rescale_intercept)
     else:
-        gt_image = gt_vol
-        lr_image = lr_vol
+        image = image_ori
 
-    return gt_image, lr_image
+    imageDim = image.shape
+
+    zoom_x = nVoxels[0] / imageDim[0]
+    zoom_y = nVoxels[1] / imageDim[1]
+    zoom_z = nVoxels[2] / imageDim[2]
+
+    if zoom_x != 1.0 or zoom_y != 1.0 or zoom_z != 1.0:
+        print(f"Resize ct image from {imageDim[0]}x{imageDim[1]}x{imageDim[2]} to "
+              f"{nVoxels[0]}x{nVoxels[1]}x{nVoxels[2]}")
+        image = scipy.ndimage.interpolation.zoom(
+            image, (zoom_x, zoom_y, zoom_z), order=3, prefilter=False
+        )
+
+    image_max = np.max(image)
+    image_min = np.min(image)
+    image_mean = np.mean(image)
+    print("Range of CT image is [%f, %f], mean: %f" % (image_min, image_max, image_mean))
+    if normalize and image_min !=0 and image_max != 1:
+        print("Normalize range to [0, 1]")
+        image = (image - image_min) / (image_max - image_min)
+
+    return image
 
 
-def generator(volPath, configPath, outputPath, show=False):
+def generator(matPath, configPath, outputPath, show=False):
     """
     Generate projections given CT image and configuration.
+
     """
+
     # Load configuration
     with open(configPath, "r") as handle:
         data = yaml.safe_load(handle)
 
     # Load CT image
     geo = ConeGeometry_special(data)
-    gt, lr = loadImage(volPath, data['lrVol'], data["nVoxel"], data["convert"],
+    img = loadImage(matPath, data["nVoxel"], data["convert"],
                     data["rescale_slope"], data["rescale_intercept"], data["normalize"])
-    data["image"] = gt.copy()
-    
-    if lr is None:
-        print("Target shape is same with original volume.")
-        img = gt
-    else:
-        scale = np.array(gt.shape) / np.array(lr.shape)    
-        upsample = 'trilinear'
-        print(f"Volume {lr.shape} is upsampled into {gt.shape} by {upsample}.")
-        if upsample == 'trilinear':
-            img = scipy.ndimage.zoom(lr, scale, order=1)
-        elif upsample == 'cubic':
-            img = scipy.ndimage.zoom(lr, scale, order=3, prefilter=False)
-        elif upsample == 'prefilter':
-            img = scipy.ndimage.zoom(lr, scale, order=3)
-        else:
-            print('No upsample method was selected')
-            img = scipy.ndimage.zoom(lr, scale, order=0)
-        data["upsampled"] = img.copy()
-            
+    data["image"] = img.copy()
+
+    # plt.figure()
+    # plt.imshow(img[:,:,0])
+    # plt.show()
+
     # Generate training images
     if data["randomAngle"] is False:
         data["train"] = {"angles": np.linspace(0, data["totalAngle"] / 180 * np.pi, data["numTrain"]+1)[:-1] + data["startAngle"]/ 180 * np.pi}
@@ -243,42 +211,6 @@ def generator(volPath, configPath, outputPath, show=False):
 
     print(f"Save files in {outputPath}")
 
-def downsample_volume(volume, scale_factor=2):
-    if isinstance(scale_factor, (int, float)):
-        volume_dim = volume.ndim
-        scale_factor = [scale_factor] * volume_dim
-    
-    original_spacing = volume.GetSpacing()
-    original_size = volume.GetSize()
-
-    new_spacing = np.multiply(scale_factor, original_spacing)
-
-    new_size = [
-        int(round(original_size[i] * (original_spacing[i] / new_spacing[i])))
-        for i in range(3)
-    ]
-
-    resampler = sitk.ResampleImageFilter()
-    resampler.SetOutputSpacing(new_spacing)
-    resampler.SetSize(new_size)
-    resampler.SetInterpolator(sitk.sitkLinear)
-    resampler.SetOutputOrigin(volume.GetOrigin())
-    resampler.SetOutputDirection(volume.GetDirection())
-    resampler.SetDefaultPixelValue(volume.GetPixelIDValue())
-
-    downsampled_volume = resampler.Execute(volume)
-
-    return downsampled_volume
-
-def normalize_volume(volume):
-    stats = sitk.StatisticsImageFilter()
-    stats.Execute(volume)
-    min_value = stats.GetMinimum()
-    max_value = stats.GetMaximum()
-
-    normalized_volume = sitk.Cast((volume - min_value) / (max_value - min_value), sitk.sitkFloat32)
-
-    return normalized_volume
 
 if __name__ == "__main__":
     main()

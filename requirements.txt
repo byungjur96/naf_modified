@@ -8,3 +8,5 @@ argparse==1.4.0
 PyYAML==6.0
 scikit-image==0.19.3
 imageio==2.25.1
+SimpleITK
+einops
